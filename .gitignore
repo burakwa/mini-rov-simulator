@@ -87,6 +87,8 @@ ipch/
 logs/
 *.tmp
 
+.vscode
+
 # ---------- Operating System ----------
 .DS_Store
 Thumbs.db

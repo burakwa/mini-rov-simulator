@@ -276,12 +276,12 @@ class ROVApp:
         
         # Always initialize state (either from firmware or simulated)
         self.state = ROVState()
-        self.running = self.firmware_process is not None and self.firmware_process.running
+        # running already set above (line 270)
 
     def _update_from_firmware(self) -> None:
         """Update state from firmware simulator."""
-        # Read from firmware if available
-        if self.firmware_process and self.firmware_process.running:
+        # Read from firmware if available (using app-level running flag)
+        if self.running and self.firmware_process is not None:
             self.state = self.firmware_process.read_state()
         
         # If no firmware data, fall back to simulated movement
@@ -293,7 +293,7 @@ class ROVApp:
             t = self.state.timestamp if self.state else time.time()
             
             # If using simulated data (no firmware), generate smooth movements
-            if self.firmware_process is None or not self.firmware_process.running:
+            if not self.running:
                 # Sinusoidal oscillations for realistic movement
                 roll_offset = 2.0 * math.sin(t * 0.5)
                 pitch_offset = 1.5 * math.cos(t * 0.7)
