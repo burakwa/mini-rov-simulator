@@ -29,7 +29,7 @@ class TestDataModels:
         data = DepthData()
         assert data.depth == 0.0
         assert data.temperature == 0.0
-        assert data.pressure == 0.0
+        assert data.pressure == 101.3  # Atmospheric pressure in kPa
 
     def test_depth_data_custom(self):
         """DepthData should accept custom values."""

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
 import time
 from typing import Optional
 
@@ -36,7 +38,7 @@ class DepthData(BaseModel):
         default=0.0, description="Temperature in °C"
     )
     pressure: float = Field(
-        default=0.0, description="Pressure in kPa"
+        default=101.3, description="Pressure in kPa"
     )
 
 
@@ -63,6 +65,61 @@ class ROVState(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Firmware integration
+# ---------------------------------------------------------------------------
+
+
+class FirmwareProcess:
+    """Manages the firmware simulator subprocess."""
+
+    def __init__(self) -> None:
+        self.process: Optional[subprocess.Popen] = None
+        self.state: Optional[ROVState] = None
+        self.running: bool = False
+
+    def start(self) -> bool:
+        """Start the firmware simulator process."""
+        try:
+            # Start firmware simulator
+            self.process = subprocess.Popen(
+                [sys.executable, "-m", "ground_station"],
+                cwd="C:\\Users\\burak\\OneDrive\\Masaüstü\\Proje\\mini-rov-simulator\\ground_station",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            self.running = True
+            return True
+        except Exception as e:
+            print(f"Failed to start firmware: {e}")
+            self.running = False
+            return False
+
+    def stop(self) -> None:
+        """Stop the firmware simulator process."""
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait()
+        self.running = False
+        self.process = None
+
+    def read_state(self) -> Optional[ROVState]:
+        """Read latest state from firmware process.
+        
+        In a real implementation, this would parse protocol messages.
+        For now, we simulate based on process running.
+        """
+        if not self.running or self.process is None:
+            return None
+        
+        # Read from firmware process stdout
+        # In production, this would parse JSON protocol messages
+        # For now, return None to use simulated data
+        return None
+
+
+# ---------------------------------------------------------------------------
 # GUI Application
 # ---------------------------------------------------------------------------
 
@@ -73,6 +130,7 @@ class ROVApp:
     def __init__(self) -> None:
         self.state: Optional[ROVState] = None
         self.running: bool = False
+        self.firmware_process: Optional[FirmwareProcess] = None
 
         # Plot data history
         self.history_size: int = 50
@@ -97,8 +155,8 @@ class ROVApp:
 
         self._init_plots()
 
-        # Simulated firmware connection
-        self._connect_simulation()
+        # Connect to firmware
+        self._connect_firmware()
 
     def _init_plots(self) -> None:
         """Initialize plot styles and limits."""
@@ -150,49 +208,65 @@ class ROVApp:
             ax.grid(True, alpha=0.3)
             ax.set_xlim(0, self.history_size)
 
-    def _connect_simulation(self) -> None:
-        """Connect to simulated firmware/ROV state."""
-        # In a production system, this would connect to the actual
-        # firmware via UDP/TCP or shared memory
-        self.running = True
-        # Start with static state
+    def _connect_firmware(self) -> None:
+        """Connect to firmware simulator."""
+        self.firmware_process = FirmwareProcess()
+        if not self.firmware_process.start():
+            print("Warning: Could not start firmware simulator, using simulation mode")
+        # Always initialize state (either from firmware or simulated)
         self.state = ROVState()
+        self.running = self.firmware_process is not None and self.firmware_process.running
 
     def _update_from_firmware(self) -> None:
-        """Update state from firmware simulation."""
-        # This would receive data from the actual firmware
-        # For now, generate subtle simulated movement
+        """Update state from firmware simulator."""
+        # Try to read from firmware process
+        if self.firmware_process and self.firmware_process.running:
+            # Read line from firmware stdout
+            try:
+                line = self.firmware_process.process.stdout.readline()
+                if line.strip():
+                    # Parse JSON protocol message
+                    # data = json.loads(line)
+                    # self.state = ROVState(**data)
+                    pass
+            except Exception:
+                pass
+        
+        # If no firmware data, use simulated movement
         if self.state is None:
-            return
+            self.state = ROVState()
 
-        # Sim gentle oscillations
-        t = self.state.timestamp
-        # Approximately 60 FPS update interval (16ms dt)
-
-        # Small sinusoidal movements
+        # Generate smooth simulated movements
+        t = self.state.timestamp if self.state else time.time()
+        
+        # Sinusoidal oscillations for realistic movement
         roll_offset = 2.0 * math.sin(t * 0.5)
         pitch_offset = 1.5 * math.cos(t * 0.7)
         yaw_offset = 1.0 * math.sin(t * 1.1)
         depth_offset = 0.1 * math.sin(t * 0.3)
 
+        # Update voltage slowly
+        voltage_drift = 0.001 * math.sin(t * 0.2)
+
         self.state = ROVState(
             timestamp=t,
             imu=ImuData(
-                roll=self.state.imu.roll + roll_offset,
-                pitch=self.state.imu.pitch + pitch_offset,
-                yaw=self.state.imu.yaw + yaw_offset,
+                roll=self.state.imu.roll + roll_offset if self.state else roll_offset,
+                pitch=self.state.imu.pitch + pitch_offset if self.state else pitch_offset,
+                yaw=self.state.imu.yaw + yaw_offset if self.state else yaw_offset,
                 angular_velocity=self.state.imu.angular_velocity * 0.98
-                + 0.02,
-                linear_acceleration=self.state.imu.linear_acceleration * 0.95,
+                + 0.02 if self.state else 0.0,
+                linear_acceleration=self.state.imu.linear_acceleration * 0.95
+                if self.state else 0.0,
             ),
             depth=DepthData(
-                depth=self.state.depth.depth + depth_offset,
+                depth=self.state.depth.depth + depth_offset if self.state else depth_offset,
                 temperature=self.state.depth.temperature
-                + 0.01 * __import__("math").sin(t),
-                pressure=self.state.depth.pressure + 0.05,
+                + 0.01 * math.sin(t) if self.state else 0.0,
+                pressure=self.state.depth.pressure + 0.05 if self.state else 101.3,
             ),
-            thrusters=self.state.thrusters,
-            voltage=self.state.voltage,
+            thrusters=self.state.thrusters if self.state else ThrusterData(),
+            voltage=self.state.voltage + voltage_drift if self.state else 12.0,
         )
 
     def _update_plots(self, frame: int) -> list:
@@ -283,9 +357,9 @@ class ROVApp:
         plt.show()
 
     def _show_instructions(self) -> None:
-        """Display control instructions."""
+        """Display control instructions (bilingual)."""
         instructions = (
-            "Mini ROV Ground Station Controls:\n"
+            "Mini ROV Ground Station Controls / Kontroller:\n"
             "  - W/S: Forward/Backward (Vertical Thruster)\n"
             "  - A/D: Left/Right (Lateral Thruster)\n"
             "  - Arrow Keys: Yaw Left/Right\n"
@@ -295,3 +369,12 @@ class ROVApp:
             "  - ESC: Close application"
         )
         print(instructions)
+
+
+def main() -> None:
+    app = ROVApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
