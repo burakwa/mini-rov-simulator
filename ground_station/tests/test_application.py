@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
-from ground_station.application import ROVApp, ROVState, ImuData, DepthData, ThrusterData
+from ground_station.application import (
+    DepthData,
+    ImuData,
+    ROVApp,
+    ROVState,
+    ThrusterData,
+)
 
 
 class TestDataModels:

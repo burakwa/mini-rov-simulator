@@ -1,5 +1,6 @@
 #include "motor.h"
 #include <cmath>
+#include <algorithm>
 
 namespace rov {
 

@@ -11,6 +11,7 @@ from typing import Optional
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from pydantic import BaseModel, Field
+import json
 
 
 # ---------------------------------------------------------------------------
@@ -104,19 +105,60 @@ class FirmwareProcess:
         self.running = False
         self.process = None
 
-    def read_state(self) -> Optional[ROVState]:
+    def read_state(self) -> ROVState | None:
         """Read latest state from firmware process.
         
-        In a real implementation, this would parse protocol messages.
-        For now, we simulate based on process running.
+        Parses JSON protocol from firmware simulator.
+        Expected format: {"timestamp":..., "imu":{}, "depth":{}, "thrusters":{}, "voltage":...}
         """
         if not self.running or self.process is None:
             return None
         
-        # Read from firmware process stdout
-        # In production, this would parse JSON protocol messages
-        # For now, return None to use simulated data
-        return None
+        try:
+            line = self.process.stdout.readline()
+            if not line:
+                return None
+            
+            return self._parse_firmware_line(line)
+        except Exception as e:
+            print(f"Error reading firmware state: {e}")
+            return None
+    
+    def _parse_firmware_line(self, line: str) -> ROVState | None:
+        """Parse JSON line from firmware simulator."""
+        try:
+            data = json.loads(line.strip())
+            
+            imu_data = ImuData(
+                roll=data.get("imu", {}).get("roll", 0.0),
+                pitch=data.get("imu", {}).get("pitch", 0.0),
+                yaw=data.get("imu", {}).get("yaw", 0.0),
+                angular_velocity=data.get("imu", {}).get("angular_velocity", 0.0),
+                linear_acceleration=data.get("imu", {}).get("linear_acceleration", 0.0),
+            )
+            
+            depth_data = DepthData(
+                depth=data.get("depth", {}).get("current_depth", 0.0),
+                temperature=data.get("depth", {}).get("temperature", 0.0),
+                pressure=data.get("depth", {}).get("pressure", 101.3),
+            )
+            
+            thruster_data = ThrusterData(
+                left_thruster=data.get("thrusters", {}).get("left", 0.0),
+                right_thruster=data.get("thrusters", {}).get("right", 0.0),
+                vertical_thruster=data.get("thrusters", {}).get("vertical", 0.0),
+            )
+            
+            return ROVState(
+                timestamp=data.get("timestamp", time.time()),
+                imu=imu_data,
+                depth=depth_data,
+                thrusters=thruster_data,
+                voltage=data.get("voltage", 12.0),
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Failed to parse firmware data: {e}")
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -211,30 +253,76 @@ class ROVApp:
     def _connect_firmware(self) -> None:
         """Connect to firmware simulator."""
         self.firmware_process = FirmwareProcess()
-        if not self.firmware_process.start():
-            print("Warning: Could not start firmware simulator, using simulation mode")
+        
+        # Start firmware simulator process (expects JSON output)
+        firmware_exe = (
+            r"C:\Users\burak\OneDrive\Masaüstü\Proje\mini-rov-simulator\firmware\build\Release\firmware.exe"
+        )
+        
+        try:
+            self.firmware_process = subprocess.Popen(
+                [sys.executable, firmware_exe],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            self.running = True
+            print("Connected to firmware simulator (JSON protocol)")
+        except Exception as e:
+            print(f"Warning: Could not start firmware simulator: {e}")
+            print("Using simulated data mode")
+            self.running = False
+        
         # Always initialize state (either from firmware or simulated)
         self.state = ROVState()
         self.running = self.firmware_process is not None and self.firmware_process.running
 
     def _update_from_firmware(self) -> None:
         """Update state from firmware simulator."""
-        # Try to read from firmware process
+        # Read from firmware if available
         if self.firmware_process and self.firmware_process.running:
-            # Read line from firmware stdout
-            try:
-                line = self.firmware_process.process.stdout.readline()
-                if line.strip():
-                    # Parse JSON protocol message
-                    # data = json.loads(line)
-                    # self.state = ROVState(**data)
-                    pass
-            except Exception:
-                pass
+            self.state = self.firmware_process.read_state()
         
-        # If no firmware data, use simulated movement
+        # If no firmware data, fall back to simulated movement
         if self.state is None:
             self.state = ROVState()
+        
+        # Use real firmware data or simulated fallback
+        if self.state is not None:
+            t = self.state.timestamp if self.state else time.time()
+            
+            # If using simulated data (no firmware), generate smooth movements
+            if self.firmware_process is None or not self.firmware_process.running:
+                # Sinusoidal oscillations for realistic movement
+                roll_offset = 2.0 * math.sin(t * 0.5)
+                pitch_offset = 1.5 * math.cos(t * 0.7)
+                yaw_offset = 1.0 * math.sin(t * 1.1)
+                depth_offset = 0.1 * math.sin(t * 0.3)
+                
+                # Update voltage slowly
+                voltage_drift = 0.001 * math.sin(t * 0.2)
+                
+                self.state = ROVState(
+                    timestamp=t,
+                    imu=ImuData(
+                        roll=self.state.imu.roll + roll_offset if self.state else roll_offset,
+                        pitch=self.state.imu.pitch + pitch_offset if self.state else pitch_offset,
+                        yaw=self.state.imu.yaw + yaw_offset if self.state else yaw_offset,
+                        angular_velocity=self.state.imu.angular_velocity * 0.98
+                        + 0.02 if self.state else 0.0,
+                        linear_acceleration=self.state.imu.linear_acceleration * 0.95
+                        if self.state else 0.0,
+                    ),
+                    depth=DepthData(
+                        depth=self.state.depth.depth + depth_offset if self.state else depth_offset,
+                        temperature=self.state.depth.temperature
+                        + 0.01 * math.sin(t) if self.state else 0.0,
+                        pressure=self.state.depth.pressure + 0.05 if self.state else 101.3,
+                    ),
+                    thrusters=self.state.thrusters if self.state else ThrusterData(),
+                    voltage=self.state.voltage + voltage_drift if self.state else 12.0,
+                )
 
         # Generate smooth simulated movements
         t = self.state.timestamp if self.state else time.time()

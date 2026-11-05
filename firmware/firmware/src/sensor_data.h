@@ -6,6 +6,7 @@ struct IMUData {
     double roll = 0.0;       // Roll angle in degrees
     double pitch = 0.0;      // Pitch angle in degrees
     double yaw = 0.0;        // Yaw heading in degrees
+    double target_yaw = 0.0; // Target heading in degrees
     double angular_velocity = 0.0;  // deg/s
     double linear_acceleration = 0.0;  // m/s^2
 };

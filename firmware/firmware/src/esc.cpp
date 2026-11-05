@@ -1,5 +1,6 @@
 #include "esc.h"
 #include <cmath>
+#include <algorithm>
 
 namespace rov {
 

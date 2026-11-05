@@ -53,19 +53,19 @@ int main() {
             imu.roll = 2.0 * sin(roll_phase);                           // Small roll oscillation
             imu.pitch = 1.5 * cos(pitch_phase);                         // Pitch oscillation
             imu.yaw = 5.0 * sin(yaw_phase);                             // Yaw drift
-            imu.angular_velocity = 0.1 * sin(timestamp * 0.5);          // Angular velocity
-            imu.linear_acceleration = 0.05 * cos(timestamp * 0.3);      // Linear accel
+            imu.angular_velocity = 0.1 * sin(simulation_time * 0.5);          // Angular velocity
+            imu.linear_acceleration = 0.05 * cos(simulation_time * 0.3);      // Linear accel
 
             // Depth simulation with first-order dynamics
             double depth_rate = 0.1 * (target_depth - depth_momentum);
             depth_momentum += depth_rate * dt;
             // Add small high-frequency component
-            depth_momentum += 0.02 * sin(timestamp * 1.2);
+            depth_momentum += 0.02 * sin(simulation_time * 1.2);
 
             DepthData depth;
             depth.current_depth = depth_momentum;
             depth.target_depth = target_depth;
-            depth.temperature = 8.0 + 0.5 * sin(timestamp * 0.1);       // Slight temp variation
+            depth.temperature = 8.0 + 0.5 * sin(simulation_time * 0.1);       // Slight temp variation
             depth.pressure = 101.3 + depth_momentum * 0.997;            // Hydrostatic pressure
 
             // Thruster state (from last control cycle)
@@ -107,27 +107,43 @@ int main() {
             thrusters.right = actuators.right_thruster;
             thrusters.vertical = actuators.vertical_thruster;
 
-            // -----------------------------------------------------------------
-            // 3. Output data (for Python ground station or standalone viewing)
-            // -----------------------------------------------------------------
-            // Print formatted status line (overwrite same line)
-            cout << "\r";
-            cout << "[" << fixed << setprecision(2);
-            cout << "t=" << setw(6) << simulation_time << "s ";
-            cout << "D=" << setw(5) << depth.current_depth << "m ";
-            cout << "R=" << setw(5) << imu.roll << "° ";
-            cout << "P=" << setw(5) << imu.pitch << "° ";
-            cout << "Y=" << setw(5) << imu.yaw << "° ";
-            cout << "L=" << setw(4) << actuators.left_thruster << " ";
-            cout << "R=" << setw(4) << actuators.right_thruster << " ";
-            cout << "V=" << setw(4) << actuators.vertical_thruster << "]";
-            cout << "\033[K";  // Clear to end of line
-            cout.flush();
+// -----------------------------------------------------------------
+            // 3. Output data (JSON protocol for ground station)
+// -----------------------------------------------------------------
+            // JSON format: timestamp, imu, depth, thrusters, voltage
+            cout << "{";
+            cout << "\"timestamp\":" << simulation_time;
+            
+            // IMU data
+            cout << ",\"imu\":{\"roll\":" << imu.roll
+                << ",\"pitch\":" << imu.pitch
+                << ",\"yaw\":" << imu.yaw
+                << ",\"angular_velocity\":" << imu.angular_velocity
+                << ",\"linear_acceleration\":" << imu.linear_acceleration
+                << "}";
+            
+            // Depth data
+            cout << ",\"depth\":{\"current_depth\":" << depth.current_depth
+                << ",\"target_depth\":" << depth.target_depth
+                << ",\"temperature\":" << depth.temperature
+                << ",\"pressure\":" << depth.pressure
+                << "}";
+            
+            // Thruster data
+            cout << ",\"thrusters\":{\"left\":" << actuators.left_thruster
+                << ",\"right\":" << actuators.right_thruster
+                << ",\"vertical\":" << actuators.vertical_thruster
+                << "}";
+            
+            // Voltage
+            cout << ",\"voltage\":" << 12.0;
+            
+            cout << "}" << endl;  // Newline for easy line-by-line parsing
 
             // -----------------------------------------------------------------
             // 4. Sleep for real-time simulation (optional)
             // -----------------------------------------------------------------
-            this_thread::sleep_for(chrono::milliseconds(int(dt * 1000)));
+            std::this_thread::sleep_for(std::chrono::milliseconds(int(dt * 1000)));
         }
     } catch (const exception& e) {
         cout << "\nSimulation stopped." << endl;

@@ -1,5 +1,7 @@
 #include "controller.h"
 #include <cmath>
+#include <numbers>
+#include <algorithm>
 
 namespace rov {
 
@@ -68,8 +70,8 @@ double Controller::clamp(double val, double min_val, double max_val) {
 }
 
 double Controller::normalize_angle(double angle) {
-    while (angle > M_PI) angle -= 2.0 * M_PI;
-    while (angle < -M_PI) angle += 2.0 * M_PI;
+    while (angle > std::numbers::pi) angle -= 2.0 * std::numbers::pi;
+    while (angle < -std::numbers::pi) angle += 2.0 * std::numbers::pi;
     return angle;
 }
 

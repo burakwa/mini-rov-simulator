@@ -6,7 +6,7 @@
 namespace rov {
 
 // Firmware version
-const string VERSION = "0.1.0";
+const std::string VERSION = "0.1.0";
 
 // Sensor data structures (forward declarations; defined in sensor_data.h)
 struct IMUData;

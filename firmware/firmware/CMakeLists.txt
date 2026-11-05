@@ -10,7 +10,6 @@ add_executable(firmware
     src/esc.cpp
     src/controller.cpp
     src/safety_manager.cpp
-    src/main.cpp
 )
 
 set_property(TARGET firmware PROPERTY CXX_STANDARD 20)
